@@ -1,8 +1,7 @@
 import 'dotenv/config';
 import process from 'node:process';
-import { generateText, streamText } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
-import type { LanguageModel, ModelMessage } from 'ai';
+import type { ModelMessage } from 'ai';
 import { createInterface } from 'node:readline';
 import { calculatorTool, weatherTool } from './tools';
 import { agentLoop } from './agent-loop';
