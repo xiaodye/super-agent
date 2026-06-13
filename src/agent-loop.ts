@@ -1,6 +1,6 @@
-import { streamText, type ModelMessage } from 'ai';
-import { detect, recordCall, recordResult, resetHistory } from './loop-detection.js';
-import { isRetryable, calculateDelay, sleep } from './retry.js';
+import { LanguageModel, streamText, ToolSet, type ModelMessage } from 'ai';
+import { detect, recordCall, recordResult, resetHistory } from './loop-detection';
+import { isRetryable, calculateDelay, sleep } from './retry';
 
 const MAX_STEPS = 15;
 const MAX_RETRIES = 3;
@@ -11,8 +11,8 @@ export interface BudgetState {
 }
 
 export async function agentLoop(
-    model: any,
-    tools: any,
+    model: LanguageModel,
+    tools: ToolSet,
     messages: ModelMessage[],
     system: string,
     budget: BudgetState,
