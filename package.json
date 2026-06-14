@@ -1,28 +1,29 @@
 {
-  "name": "super-agent",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "type": "module",
-  "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "start": "tsx src/index.ts"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "packageManager": "pnpm@10.17.0",
-  "dependencies": {
-    "@ai-sdk/openai": "^3.0.71",
-    "ai": "^6.0.204",
-    "dotenv": "^17.4.2",
-    "fast-glob": "^3.3.3",
-    "turndown": "^7.2.4"
-  },
-  "devDependencies": {
-    "@types/node": "^25.9.3",
-    "@types/turndown": "^5.0.6",
-    "tsx": "^4.22.4",
-    "typescript": "^6.0.3"
-  }
+    "name": "super-agent",
+    "version": "1.0.0",
+    "description": "",
+    "main": "index.js",
+    "type": "module",
+    "scripts": {
+        "dev": "tsx watch src/index.ts",
+        "start": "tsx src/index.ts",
+        "continue": "tsx src/index.ts --continue"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "packageManager": "pnpm@10.17.0",
+    "dependencies": {
+        "@ai-sdk/openai": "^3.0.71",
+        "ai": "^6.0.204",
+        "dotenv": "^17.4.2",
+        "fast-glob": "^3.3.3",
+        "turndown": "^7.2.4"
+    },
+    "devDependencies": {
+        "@types/node": "^25.9.3",
+        "@types/turndown": "^5.0.6",
+        "tsx": "^4.22.4",
+        "typescript": "^6.0.3"
+    }
 }
