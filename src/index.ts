@@ -3,7 +3,7 @@ import process from 'node:process';
 import { createOpenAI } from '@ai-sdk/openai';
 import type { ModelMessage } from 'ai';
 import { createInterface } from 'node:readline';
-import { allTools, calculatorTool, weatherTool } from './tools';
+import { allTools } from './tools';
 import { agentLoop, type BudgetState } from './agent-loop';
 import { ToolRegistry } from './tool-registry';
 import { createMockModel } from './mock-model';
@@ -22,7 +22,7 @@ const registry = new ToolRegistry();
 registry.register(...allTools);
 
 // 预算由调用方持有，跨轮持续累计——agentLoop 只负责消费它
-const budget: BudgetState = { used: 0, limit: 15000 };
+const budget: BudgetState = { used: 0, limit: 150000 };
 
 console.log(`已注册 ${registry.getAll().length} 个工具：`);
 for (const tool of registry.getAll()) {

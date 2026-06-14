@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync, readdirSync, statSync, existsSync, mkdirSy
 import { join, resolve, relative, dirname, extname } from 'node:path';
 import { execSync } from 'node:child_process';
 import { createServer, type Server } from 'node:http';
-import type { ToolDefinition } from './tool-registry.js';
+import type { ToolDefinition } from './tool-registry';
 
 // ── 上一篇已有的工具 ─────────────────────────────
 

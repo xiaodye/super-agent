@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="zh-CN">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Vibe Coding 预览</title>
+        <link rel="stylesheet" href="./styles.css" />
+        <script type="importmap">
+            {
+                "imports": {
+                    "react": "https://esm.sh/react@18.3.1",
+                    "react-dom": "https://esm.sh/react-dom@18.3.1",
+                    "react-dom/client": "https://esm.sh/react-dom@18.3.1/client",
+                    "react/jsx-runtime": "https://esm.sh/react@18.3.1/jsx-runtime"
+                }
+            }
+        </script>
+    </head>
+    <body>
+        <div id="root"></div>
+
+        <!--
+    Vibe Coding bootstrap：
+    - 用 Babel Standalone 在浏览器里实时编译 TSX
+    - 递归把 ./X.tsx 这类相对 import 转成 Blob URL
+    - 入口固定为 ./App.tsx，Agent 生成的 App.tsx 必须用 createRoot 渲染到 #root
+  -->
+        <script type="module">
+            const { transform } = await import('https://esm.sh/@babel/standalone@7.25.6');
+
+            const cache = new Map();
+
+            function compile(src, filename) {
+                return transform(src, {
+                    presets: [
+                        ['react', { runtime: 'classic' }],
+                        ['typescript', { allExtensions: true, isTSX: true }],
+                    ],
+                    filename,
+                }).code;
+            }
+
+            async function rewriteRelativeImports(code, baseUrl) {
+                const re = /from\s+(['"])(\.\.?\/[^'"]+\.(?:tsx?|jsx?))\1/g;
+                const matches = [...code.matchAll(re)];
+                let out = code;
+                for (const m of matches) {
+                    const absUrl = new URL(m[2], baseUrl).href;
+                    const blobUrl = await loadModule(absUrl);
+                    out = out.replace(m[0], `from ${m[1]}${blobUrl}${m[1]}`);
+                }
+                return out;
+            }
+
+            async function loadModule(url) {
+                if (cache.has(url)) return cache.get(url);
+                const res = await fetch(url);
+                if (!res.ok) throw new Error(`Failed to fetch ${url}: ${res.status}`);
+                const src = await res.text();
+                const compiled = compile(src, url);
+                const resolved = await rewriteRelativeImports(compiled, url);
+                const blob = new Blob([resolved], { type: 'application/javascript' });
+                const blobUrl = URL.createObjectURL(blob);
+                cache.set(url, blobUrl);
+                return blobUrl;
+            }
+
+            try {
+                const entryUrl = new URL('./App.tsx', window.location.href).href;
+                const entryBlob = await loadModule(entryUrl);
+                await import(entryBlob);
+            } catch (err) {
+                document.body.innerHTML = `<pre style="padding: 24px; color: #c00; white-space: pre-wrap; font-family: monospace;">[Vibe Coding 加载失败]\n${err.stack || err.message}</pre>`;
+                console.error('[Vibe Coding bootstrap]', err);
+            }
+        </script>
+    </body>
+</html>
