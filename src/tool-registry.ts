@@ -1,4 +1,5 @@
 import { jsonSchema } from 'ai';
+import type { MCPClient, MockMCPClient } from './mcp-client';
 
 export interface ToolDefinition {
     name: string;
@@ -14,6 +15,7 @@ const DEFAULT_MAX_RESULT_CHARS = 3000;
 
 export class ToolRegistry {
     private tools = new Map<string, ToolDefinition>();
+    private mcpClients: Array<MCPClient | MockMCPClient> = [];
 
     private exclusiveLock = false;
     private concurrentCount = 0;
@@ -23,6 +25,49 @@ export class ToolRegistry {
         for (const tool of tools) {
             this.tools.set(tool.name, tool);
         }
+    }
+
+    async registerMCPServer(
+        serverName: string,
+        client: MCPClient | MockMCPClient,
+    ): Promise<string[]> {
+        await client.connect();
+        this.mcpClients.push(client);
+
+        const tools = await client.listTools();
+        const registered: string[] = [];
+
+        for (const tool of tools) {
+            const prefixedName = `mcp__${serverName}__${tool.name}`;
+
+            if (this.tools.has(prefixedName)) continue;
+
+            const toolClient = client;
+            const originalName = tool.name;
+
+            this.register({
+                name: prefixedName,
+                description: `[MCP:${serverName}] ${tool.description}`,
+                parameters: tool.inputSchema as Record<string, unknown>,
+                isConcurrencySafe: true,
+                isReadOnly: true,
+                maxResultChars: 3000,
+                execute: async (input: any) => {
+                    return toolClient.callTool(originalName, input);
+                },
+            });
+
+            registered.push(prefixedName);
+        }
+
+        return registered;
+    }
+
+    async closeAllMCP(): Promise<void> {
+        for (const client of this.mcpClients) {
+            await client.close();
+        }
+        this.mcpClients = [];
     }
 
     get(name: string): ToolDefinition | undefined {
