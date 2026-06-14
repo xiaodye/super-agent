@@ -4,10 +4,10 @@ import { createOpenAI } from '@ai-sdk/openai';
 import type { ModelMessage } from 'ai';
 import { createInterface } from 'node:readline';
 import { allTools } from './tools';
-import { agentLoop } from './agent-loop';
-import { ToolDefinition, ToolRegistry } from './tool-registry';
+import { agentLoop } from './agent/agent-loop';
+import { ToolDefinition, ToolRegistry } from './tools/registry';
 import { createMockModel } from './mock-model';
-import { MCPClient, MockMCPClient } from './mcp-client';
+import { MCPClient, MockMCPClient } from './tools/mcp-client';
 
 const deepSeek = createOpenAI({
     baseURL: process.env.LLM_API_BASE,

@@ -1,5 +1,5 @@
 import { jsonSchema } from 'ai';
-import type { MCPClient, MockMCPClient } from './mcp-client.js';
+import type { MCPClient, MockMCPClient } from './mcp-client';
 
 export interface ToolDefinition {
     name: string;
@@ -9,6 +9,7 @@ export interface ToolDefinition {
     isReadOnly?: boolean;
     maxResultChars?: number;
     execute: (input: any) => Promise<unknown>;
+    profile?: string[];
     shouldDefer?: boolean;
     searchHint?: string;
 }
@@ -23,6 +24,7 @@ export class ToolRegistry {
     private concurrentCount = 0;
     private waitQueue: Array<() => void> = [];
 
+    private activeProfile: string = 'full';
     private discoveredTools = new Set<string>();
 
     register(...tools: ToolDefinition[]): void {
@@ -55,6 +57,7 @@ export class ToolRegistry {
                 isConcurrencySafe: true,
                 isReadOnly: true,
                 maxResultChars: 3000,
+                profile: ['full'],
                 shouldDefer: true,
                 searchHint: `${serverName} ${tool.name} ${tool.description}`,
                 execute: async (input: any) => {
@@ -75,6 +78,18 @@ export class ToolRegistry {
         this.mcpClients = [];
     }
 
+    setProfile(profile: string): void {
+        this.activeProfile = profile;
+    }
+
+    getProfile(): string {
+        return this.activeProfile;
+    }
+
+    markDiscovered(name: string): void {
+        this.discoveredTools.add(name);
+    }
+
     get(name: string): ToolDefinition | undefined {
         return this.tools.get(name);
     }
@@ -85,6 +100,9 @@ export class ToolRegistry {
 
     getActiveTools(): ToolDefinition[] {
         return this.getAll().filter((tool) => {
+            if (tool.profile && !tool.profile.includes(this.activeProfile)) {
+                return false;
+            }
             if (tool.shouldDefer && !this.discoveredTools.has(tool.name)) {
                 return false;
             }
@@ -135,6 +153,8 @@ export class ToolRegistry {
         let deferred = 0;
 
         for (const tool of this.tools.values()) {
+            if (tool.profile && !tool.profile.includes(this.activeProfile)) continue;
+
             const schemaSize = JSON.stringify({
                 name: tool.name,
                 description: tool.description,
