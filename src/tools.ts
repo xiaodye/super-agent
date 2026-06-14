@@ -3,6 +3,7 @@ import { join, resolve, relative, dirname, extname } from 'node:path';
 import { execSync } from 'node:child_process';
 import { createServer, type Server } from 'node:http';
 import type { ToolDefinition } from './tool-registry';
+import { pickSearchTool, webFetchTool } from './search-tools';
 
 // ── 上一篇已有的工具 ─────────────────────────────
 
@@ -192,9 +193,9 @@ export const globTool: ToolDefinition = {
         const baseDir = resolve(path);
         const results: string[] = [];
         const regexStr = pattern
-            .replace(/\./g, '\\.')
-            .replace(/\*\*/g, '<<<GLOBSTAR>>>')
-            .replace(/\*/g, '[^/]*')
+            .replace(/\\./g, '\\\\.')
+            .replace(/\\*\\*/g, '<<<GLOBSTAR>>>')
+            .replace(/\\*/g, '[^/]*')
             .replace(/<<<GLOBSTAR>>>/g, '.*');
         const regex = new RegExp(`^${regexStr}$`);
 
@@ -346,6 +347,8 @@ export const bashTool: ToolDefinition = {
     },
 };
 
+// ── 以下工具已移至 search-tools.ts（web_search / web_fetch），这里只保留 fetch_url 兼容 ──
+
 // 演示用预定义内容：教学场景里保证可重现，避免外网抖动
 const MOCK_PAGES: Record<string, string> = {
     'https://esm.sh': `esm.sh - 一个免费的 ES module CDN。直接 import "https://esm.sh/react@18" 就能用最新版 React，自动处理依赖打包、TypeScript 支持和 JSX 转换，配合浏览器 import maps 可以零构建运行 React 项目。`,
@@ -492,4 +495,6 @@ export const allTools: ToolDefinition[] = [
     bashTool,
     fetchUrlTool,
     startPreviewTool,
+    pickSearchTool(),
+    webFetchTool,
 ];
