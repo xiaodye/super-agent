@@ -1,4 +1,4 @@
-import { streamText, type ModelMessage } from 'ai';
+import { LanguageModelUsage, streamText, type ModelMessage } from 'ai';
 import { ToolRegistry } from '../tools/registry';
 import { detect, recordCall, recordResult, resetHistory } from './loop-detection';
 import { isRetryable, calculateDelay, sleep } from './retry';
@@ -28,7 +28,7 @@ export async function agentLoop(
         let shouldBreak = false;
         let lastToolCall: { name: string; input: unknown } | null = null;
         let stepResponse: any;
-        let stepUsage: any;
+        let stepUsage: LanguageModelUsage;
 
         for (let attempt = 1; ; attempt++) {
             try {
