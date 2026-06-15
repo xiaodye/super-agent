@@ -1,12 +1,12 @@
 import 'dotenv/config';
 import process from 'node:process';
 import { createOpenAI } from '@ai-sdk/openai';
-import type { ModelMessage } from 'ai';
+
 import { createInterface } from 'node:readline';
 import { allTools } from './tools';
 import { agentLoop } from './agent/agent-loop';
 import { ToolDefinition, ToolRegistry } from './tools/registry';
-import { createMockModel } from './mock-model';
+import { createMockModel, setCacheEnabled } from './mock-model';
 import { MCPClient, MockMCPClient } from './tools/mcp-client';
 import { SessionStore } from './session/store';
 import {
@@ -19,6 +19,9 @@ import {
 } from './context/prompt-builder';
 import { estimateTokens, microcompact, summarize } from './context/compressor';
 import { estimateMessageTokens, applyDefense } from './context/defense';
+import { buildContextSnapshot, renderContextView, renderUsageView } from './context/view';
+import { UsageTracker } from './usage/tracker';
+import { ModelMessage } from 'ai';
 
 const deepSeek = createOpenAI({
     baseURL: process.env.LLM_API_BASE,
@@ -209,29 +212,10 @@ async function main() {
     const store = new SessionStore('default');
     let messages: ModelMessage[] = [];
     const timestamps = new Map<number, number>();
+    const tracker = new UsageTracker('.usage/today.jsonl');
 
-    // Inject fake history with varied ages
-    injectFakeHistory(messages, timestamps);
-    console.log(`\n[Session] 新会话（已注入 ${messages.length} 条模拟历史，时间跨度 12 分钟）`);
-
-    // Apply three-layer defense
-    const beforeTokens = estimateMessageTokens(messages);
-    console.log(`\n=== 三层即时防线 ===`);
-    console.log(`[防线前] ${messages.length} 条消息, ~${beforeTokens} tokens`);
-
-    const defense = applyDefense(messages, timestamps);
-    messages = defense.messages;
-    console.log(`[Layer 2: 截断] ${defense.truncated} 个超长结果被截断`);
-    console.log(`[Layer 3: TTL] ${defense.softPruned} 个软修剪, ${defense.hardPruned} 个硬清除`);
-    console.log(
-        `[防线后] ${messages.length} 条消息, ~${defense.tokenEstimate} tokens (节省 ${beforeTokens - defense.tokenEstimate})`,
-    );
-    console.log(`====================\n`);
-
-    // Clear injected history for chat — defense demo is done,
-    // start fresh so mock model works properly
-    messages = [];
-    timestamps.clear();
+    // sa-10 主题是 cache 和成本，启动时直接进入空对话
+    // 上一节的三层即时防线还在 context-defense.ts 里，每轮 apply 不变
 
     const builder = new PromptBuilder()
         .pipe('coreRules', coreRules())
@@ -319,6 +303,49 @@ async function main() {
             return true;
         }
 
+        // /context: 终端可视化的 context 占用，参考 Claude Code 的 /context
+        if (cmd === '/context' || cmd === 'context') {
+            const snapshot = buildContextSnapshot({
+                modelName: process.env.DASHSCOPE_API_KEY ? 'Qwen Plus' : 'Mock Model (开发用)',
+                modelId: process.env.DASHSCOPE_API_KEY ? 'qwen3-6-plus' : 'mock-model',
+                windowTokens: 1_000_000,
+                systemPromptChars: SYSTEM.length,
+                toolDescriptionChars: registry
+                    .getActiveTools()
+                    .reduce(
+                        (a, t) =>
+                            a +
+                            t.name.length +
+                            (t.description?.length || 0) +
+                            JSON.stringify(t.parameters || {}).length,
+                        0,
+                    ),
+                memoryChars: 0,
+                skillsChars: 0,
+                messages,
+            });
+            console.log(renderContextView(snapshot));
+            return true;
+        }
+
+        if (cmd === '/usage' || cmd === 'usage') {
+            console.log(renderUsageView(tracker));
+            return true;
+        }
+
+        if (cmd === '/cache off' || cmd === 'cache off') {
+            setCacheEnabled(false);
+            console.log(
+                '\n  \x1b[38;5;220m⚠ 已关闭 cache 模拟\x1b[0m  接下来每次请求都按 cache miss 计算\n',
+            );
+            return true;
+        }
+        if (cmd === '/cache on' || cmd === 'cache on') {
+            setCacheEnabled(true);
+            console.log('\n  \x1b[38;5;36m✓ 已开启 cache 模拟\x1b[0m\n');
+            return true;
+        }
+
         return false;
     }
 
@@ -342,7 +369,7 @@ async function main() {
             store.append(userMsg);
 
             const beforeLen = messages.length;
-            await agentLoop(model, registry, messages, SYSTEM);
+            await agentLoop(model, registry, messages, SYSTEM, tracker);
 
             const newMessages = messages.slice(beforeLen);
             const now = Date.now();
@@ -359,11 +386,35 @@ async function main() {
         });
     }
 
-    console.log('Super Agent v0.9 — Context Defense (type "exit" to quit)');
+    console.log('Super Agent v0.10 — Cache & Cost (type "exit" to quit)');
     console.log('快捷命令：');
-    console.log('  模拟长对话 / sim    — 注入 20 条模拟历史（含大工具结果）');
-    console.log('  执行防线 / defend   — 执行三层防线，查看截断和修剪效果');
-    console.log('  查看状态 / status   — 查看当前消息数和 token 估算\n');
+    console.log('  /context    — 终端里看 context 占用矩阵（参考 Claude Code）');
+    console.log('  /usage      — 累计 token 用量、cache 命中率、节省金额');
+    console.log('  /cache off  — 关闭 cache 模拟，对比开 vs 关的成本差');
+    console.log('  /cache on   — 重新开启 cache 模拟');
+    console.log('  status      — 当前消息数和 token 估算');
+
+    // 启动时直接秀一次 /context，让用户立刻看到初始上下文构成
+    const startupSnapshot = buildContextSnapshot({
+        modelName: process.env.DASHSCOPE_API_KEY ? 'Qwen Plus' : 'Mock Model (开发用)',
+        modelId: process.env.DASHSCOPE_API_KEY ? 'qwen3-6-plus' : 'mock-model',
+        windowTokens: 1_000_000,
+        systemPromptChars: SYSTEM.length,
+        toolDescriptionChars: registry
+            .getActiveTools()
+            .reduce(
+                (a, t) =>
+                    a +
+                    t.name.length +
+                    (t.description?.length || 0) +
+                    JSON.stringify(t.parameters || {}).length,
+                0,
+            ),
+        memoryChars: 0,
+        skillsChars: 0,
+        messages,
+    });
+    console.log(renderContextView(startupSnapshot));
     ask();
 }
 

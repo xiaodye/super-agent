@@ -40,4 +40,4 @@ debug.log
 # LangGraph API
 .langgraph_api
 
-.sessions
+/.sessions
