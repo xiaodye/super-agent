@@ -41,3 +41,5 @@ debug.log
 .langgraph_api
 
 /.sessions
+/.usage
+/.memory
