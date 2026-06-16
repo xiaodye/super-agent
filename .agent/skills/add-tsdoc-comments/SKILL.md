@@ -38,7 +38,7 @@ Use standard TSDoc blocks:
  * @returns 包含认证 header 与租户标识的请求上下文。
  */
 function buildRequestContext(session: Session): RequestContext {
-  // ...
+    // ...
 }
 ```
 
@@ -46,11 +46,11 @@ For interface fields:
 
 ```ts
 interface JobConfig {
-  /** 任务的唯一标识，用于日志关联与幂等校验。 */
-  id: string;
+    /** 任务的唯一标识，用于日志关联与幂等校验。 */
+    id: string;
 
-  /** 重试次数上限；超过后交由 dead letter queue 处理。 */
-  maxRetries: number;
+    /** 重试次数上限；超过后交由 dead letter queue 处理。 */
+    maxRetries: number;
 }
 ```
 
@@ -61,7 +61,7 @@ For arrow functions assigned to variables, place TSDoc before the declaration:
  * 将服务端错误归一化为 UI 可展示的消息结构。
  */
 const normalizeError = (error: unknown): DisplayError => {
-  // ...
+    // ...
 };
 ```
 
