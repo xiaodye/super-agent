@@ -16,6 +16,9 @@ export class VectorStore {
 
     /**
      * 写入或覆盖指定 chunk 的向量，保证相同 id 只保留最新版本。
+     *
+     * @param chunk 待存储的知识片段元数据。
+     * @param embedding 与 chunk 文本对应的向量表示。
      */
     add(chunk: Chunk, embedding: number[]): void {
         const existing = this.chunks.findIndex((c) => c.id === chunk.id);
@@ -28,6 +31,8 @@ export class VectorStore {
 
     /**
      * 批量写入 chunk 与 embedding，复用单条写入的去重逻辑。
+     *
+     * @param items 待写入的 chunk 与 embedding 配对列表。
      */
     addBatch(items: Array<{ chunk: Chunk; embedding: number[] }>): void {
         for (const { chunk, embedding } of items) {
@@ -37,6 +42,8 @@ export class VectorStore {
 
     /**
      * 返回当前所有已存储 chunk，供检索流程读取完整候选集。
+     *
+     * @returns
      */
     getAll(): StoredChunk[] {
         return this.chunks;
@@ -44,6 +51,8 @@ export class VectorStore {
 
     /**
      * 返回 store 中 chunk 的数量，用于状态展示或空库判断。
+     *
+     * @returns
      */
     size(): number {
         return this.chunks.length;
@@ -58,6 +67,8 @@ export class VectorStore {
 
     /**
      * 汇总当前知识库包含的 source 列表，去除重复来源。
+     *
+     * @returns
      */
     sources(): string[] {
         return [...new Set(this.chunks.map((c) => c.source))];

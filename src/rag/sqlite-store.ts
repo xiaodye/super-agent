@@ -11,6 +11,8 @@ export class SqliteVectorStore {
 
     /**
      * 打开或创建知识库数据库，并初始化向量与全文检索表。
+     *
+     * @param dbPath SQLite 数据库文件路径，默认使用当前目录下的 knowledge.db。
      */
     constructor(dbPath: string = 'knowledge.db') {
         this.db = new Database(dbPath);
@@ -46,6 +48,9 @@ export class SqliteVectorStore {
 
     /**
      * 将 chunk 同步写入元数据表、向量表和全文索引表。
+     *
+     * @param chunk 待持久化的知识片段元数据。
+     * @param embedding 与 chunk 文本对应的向量表示。
      */
     add(chunk: Chunk, embedding: number[]): void {
         const now = Date.now();
@@ -75,6 +80,8 @@ export class SqliteVectorStore {
 
     /**
      * 在单个事务中批量写入 chunk，减少 SQLite 提交开销。
+     *
+     * @param items 待写入的 chunk 与 embedding 配对列表。
      */
     addBatch(items: Array<{ chunk: Chunk; embedding: number[] }>): void {
         const tx = this.db.transaction(() => {
@@ -85,6 +92,10 @@ export class SqliteVectorStore {
 
     /**
      * 使用 sqlite-vec 按 query embedding 检索最相近的 chunk。
+     *
+     * @param queryEmbedding 查询文本对应的向量表示。
+     * @param topK 需要返回的相近结果数量上限。
+     * @returns
      */
     vectorSearch(
         queryEmbedding: number[],
@@ -120,6 +131,10 @@ export class SqliteVectorStore {
 
     /**
      * 使用 FTS5 对 chunk 文本执行关键词检索，并转换 bm25 rank 为相似度分。
+     *
+     * @param query FTS5 查询表达式或关键词。
+     * @param topK 需要返回的关键词结果数量上限。
+     * @returns
      */
     keywordSearch(query: string, topK: number): Array<{ chunk: StoredChunk; score: number }> {
         const rows = this.db
@@ -151,6 +166,8 @@ export class SqliteVectorStore {
 
     /**
      * 返回持久化知识库中的 chunk 总数。
+     *
+     * @returns
      */
     size(): number {
         return (this.db.prepare('SELECT COUNT(*) as n FROM chunks').get() as any).n;
@@ -158,6 +175,8 @@ export class SqliteVectorStore {
 
     /**
      * 查询当前知识库中所有去重后的文档来源。
+     *
+     * @returns
      */
     sources(): string[] {
         return (this.db.prepare('SELECT DISTINCT source FROM chunks').all() as any[]).map(

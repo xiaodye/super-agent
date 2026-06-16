@@ -25,6 +25,12 @@ const MMR_LAMBDA = 0.7;
 
 /**
  * 混合执行向量检索与关键词检索，并通过 MMR 降低结果重复度。
+ *
+ * @param store 提供候选 chunk 的向量存储。
+ * @param embedFn 用于生成查询 embedding 的函数。
+ * @param query 用户输入的检索查询。
+ * @param topK 需要返回的结果数量上限。
+ * @returns
  */
 export async function hybridSearch(
     store: VectorStore,
@@ -37,14 +43,14 @@ export async function hybridSearch(
 
     const candidateCount = Math.min(topK * CANDIDATE_MULTIPLIER, all.length);
 
-    // Path 1: Vector search
+    // 路径 1：向量检索。
     const [queryVec] = await embed(embedFn, [query]);
     const vectorResults = all
         .map((chunk) => ({ chunk, score: cosineSimilarity(queryVec, chunk.embedding) }))
         .sort((a, b) => b.score - a.score)
         .slice(0, candidateCount);
 
-    // Path 2: Keyword search (BM25-like TF-IDF scoring)
+    // 路径 2：关键词检索，使用近似 BM25 的 TF-IDF 评分。
     const queryTerms = tokenize(query);
     const docCount = all.length;
     const keywordResults = all
@@ -52,11 +58,11 @@ export async function hybridSearch(
         .sort((a, b) => b.score - a.score)
         .slice(0, candidateCount);
 
-    // Normalize scores to [0, 1]
+    // 将两路分数归一化到 0 到 1 区间。
     const vecNorm = normalizeMinMax(vectorResults.map((r) => r.score));
     const kwNorm = normalizeViaSigmoid(keywordResults.map((r) => r.score));
 
-    // Merge into unified candidate set
+    // 合并为统一候选集。
     const candidates = new Map<string, SearchResult>();
 
     for (let i = 0; i < vectorResults.length; i++) {
@@ -85,17 +91,20 @@ export async function hybridSearch(
         }
     }
 
-    // Sort by combined score
+    // 按混合分数排序。
     const sorted = [...candidates.values()].sort((a, b) => b.score - a.score);
 
-    // MMR deduplication
+    // 通过 MMR 做结果去重与多样化筛选。
     return mmrSelect(sorted, topK);
 }
 
-// ── BM25 scoring ──────────────────────────
+// ── BM25 评分 ──────────────────────────
 
 /**
  * 将查询或文档切成检索词，兼容英文单词与中文字符范围。
+ *
+ * @param text 待分词的查询或文档文本。
+ * @returns
  */
 function tokenize(text: string): string[] {
     return text
@@ -107,6 +116,12 @@ function tokenize(text: string): string[] {
 
 /**
  * 使用简化 BM25 公式计算查询词与单个文档的关键词相关性。
+ *
+ * @param queryTerms 查询分词结果。
+ * @param docText 待评分的文档文本。
+ * @param N 参与统计的文档总数。
+ * @param allDocs 完整候选文档集合，用于计算词频与文档频率。
+ * @returns
  */
 function bm25Score(
     queryTerms: string[],
@@ -132,10 +147,13 @@ function bm25Score(
     return score;
 }
 
-// ── Normalization ──────────────────────────
+// ── 分数归一化 ──────────────────────────
 
 /**
  * 将一组分数按 min-max 映射到 0 到 1，保留相对排序差异。
+ *
+ * @param scores 待归一化的原始分数列表。
+ * @returns
  */
 function normalizeMinMax(scores: number[]): number[] {
     if (scores.length === 0) return [];
@@ -147,15 +165,22 @@ function normalizeMinMax(scores: number[]): number[] {
 
 /**
  * 用 sigmoid 压缩无界分数，避免关键词分极值主导混合排序。
+ *
+ * @param scores 待压缩的无界分数列表。
+ * @returns
  */
 function normalizeViaSigmoid(scores: number[]): number[] {
     return scores.map((s) => 1 / (1 + Math.exp(-s)));
 }
 
-// ── MMR deduplication ──────────────────────
+// ── MMR 去重 ──────────────────────
 
 /**
  * 在高相关候选中选择多样化结果，减少内容高度相似的 chunk 扎堆。
+ *
+ * @param results 已按相关性排序的候选结果列表。
+ * @param topK 需要保留的结果数量上限。
+ * @returns
  */
 function mmrSelect(results: SearchResult[], topK: number): SearchResult[] {
     if (results.length <= topK) return results;
@@ -188,6 +213,10 @@ function mmrSelect(results: SearchResult[], topK: number): SearchResult[] {
 
 /**
  * 基于分词集合计算 Jaccard 相似度，作为 MMR 的文本重复度指标。
+ *
+ * @param a 第一个待比较文本。
+ * @param b 第二个待比较文本。
+ * @returns
  */
 function jaccardSimilarity(a: string, b: string): number {
     const setA = new Set(tokenize(a));

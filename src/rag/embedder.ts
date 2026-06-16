@@ -2,11 +2,16 @@ const DIMS = 128;
 
 /**
  * 将一批文本转换为向量的 embedding 函数接口。
+ *
+ * @param texts 待转换为向量的文本列表。
+ * @returns
  */
 export type EmbeddingFn = (texts: string[]) => Promise<number[][]>;
 
 /**
  * 创建本地 mock embedder，用于无外部 API key 的开发与测试。
+ *
+ * @returns
  */
 export function createMockEmbedder(): EmbeddingFn {
     return async (texts: string[]) => texts.map(mockEmbed);
@@ -14,6 +19,9 @@ export function createMockEmbedder(): EmbeddingFn {
 
 /**
  * 创建 DashScope 兼容 OpenAI embeddings 接口的远程 embedder。
+ *
+ * @param apiKey DashScope API key，用于远程 embeddings 请求认证。
+ * @returns
  */
 export function createDashScopeEmbedder(apiKey: string): EmbeddingFn {
     return async (texts: string[]) => {
@@ -41,6 +49,10 @@ const embedCache = new Map<string, number[]>();
 
 /**
  * 批量生成 embedding，并用文本内容作为 key 复用已计算向量。
+ *
+ * @param fn 实际执行 embedding 计算的函数。
+ * @param texts 待生成向量的文本列表。
+ * @returns
  */
 export async function embed(fn: EmbeddingFn, texts: string[]): Promise<number[][]> {
     const results: number[][] = new Array(texts.length);
@@ -68,6 +80,9 @@ export async function embed(fn: EmbeddingFn, texts: string[]): Promise<number[][
 
 /**
  * 使用确定性哈希方式生成归一化向量，模拟语义 embedding 的调用形态。
+ *
+ * @param text 待转换为 mock embedding 的文本。
+ * @returns
  */
 function mockEmbed(text: string): number[] {
     const vec = new Array(DIMS).fill(0);
@@ -82,6 +97,10 @@ function mockEmbed(text: string): number[] {
 
 /**
  * 计算两个向量的 cosine similarity，用于衡量语义相似度。
+ *
+ * @param a 第一个向量。
+ * @param b 第二个向量。
+ * @returns
  */
 export function cosineSimilarity(a: number[], b: number[]): number {
     let dot = 0,

@@ -21,6 +21,10 @@ const TARGET_CHARS = TARGET_TOKENS * CHARS_PER_TOKEN;
 
 /**
  * 将文档按段落和句子切分为适合 embedding 的稳定 chunk。
+ *
+ * @param source 源文档标识，用于追踪 chunk 来源。
+ * @param text 待切分的完整文档内容。
+ * @returns
  */
 export function chunkDocument(source: string, text: string): Chunk[] {
     const paragraphs = text.split(/\n{2,}/);
@@ -68,6 +72,11 @@ export function chunkDocument(source: string, text: string): Chunk[] {
 
 /**
  * 构造带稳定 id 与 token 估算值的 chunk 记录。
+ *
+ * @param source 源文档标识，会参与生成稳定 chunk id。
+ * @param text 当前 chunk 的正文内容。
+ * @param index 当前 chunk 在 source 内的顺序索引。
+ * @returns
  */
 function makeChunk(source: string, text: string, index: number): Chunk {
     return {
