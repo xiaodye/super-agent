@@ -1,0 +1,4 @@
+interface:
+  display_name: "Add TSDoc Comments"
+  short_description: "为 TypeScript 代码补中文 TSDoc 注释"
+  default_prompt: "Use $add-tsdoc-comments to add concise Chinese TSDoc comments to TypeScript functions, methods, and interface fields."
