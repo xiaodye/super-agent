@@ -14,13 +14,16 @@
     "license": "ISC",
     "packageManager": "pnpm@10.17.0",
     "dependencies": {
-        "@ai-sdk/openai": "^3.0.71",
-        "ai": "^6.0.204",
+        "@ai-sdk/openai": "^2.0.44",
+        "ai": "^5.0.98",
+        "better-sqlite3": "^12.10.1",
         "dotenv": "^17.4.2",
         "fast-glob": "^3.3.3",
+        "sqlite-vec": "^0.1.9",
         "turndown": "^7.2.4"
     },
     "devDependencies": {
+        "@types/better-sqlite3": "^7.6.13",
         "@types/node": "^25.9.3",
         "@types/turndown": "^5.0.6",
         "tsx": "^4.22.4",
