@@ -15,6 +15,7 @@
     "packageManager": "pnpm@10.17.0",
     "dependencies": {
         "@ai-sdk/openai": "^2.0.44",
+        "@modelcontextprotocol/client": "2.0.0-alpha.2",
         "ai": "^5.0.98",
         "better-sqlite3": "^12.10.1",
         "dotenv": "^17.4.2",
