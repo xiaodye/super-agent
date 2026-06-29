@@ -1,10 +1,11 @@
 import 'dotenv/config';
 import process from 'node:process';
 import { createOpenAI } from '@ai-sdk/openai';
+import fs from 'node:fs';
 
 import { createInterface } from 'node:readline';
 import { allTools } from './tools';
-import { agentLoop } from './agent/agent-loop';
+import { agentLoop } from './agent/loop';
 import { ToolDefinition, ToolRegistry } from './tools/registry';
 import { createMockModel, setCacheEnabled } from './mock-model';
 import { MCPClient, MockMCPClient } from './tools/mcp-client';
@@ -29,6 +30,23 @@ import { contextCommands } from './commands/context';
 import { debugCommands } from './commands/debug';
 import { memoryCommands } from './commands/memory';
 import { createToolSearchTool } from './tools/tool-search';
+import { memoryContext, ragContext } from './context/prompt-pipes';
+import { chunkDocument } from './rag/chunker';
+import { createDashScopeEmbedder, createMockEmbedder, embed } from './rag/embedder';
+import { VectorStore } from './rag/store';
+import { SqliteVectorStore } from './rag/sqlite-store';
+import { createRagTools } from './tools/rag-tools';
+import { ragCommands } from './commands/rag';
+import { dreamCommands } from './commands/dream';
+import { SkillLoader } from './skills/loader';
+import { createSkillCommands } from './commands/skill';
+import { PluginManager } from './plugins/manager';
+import { PluginDefinition } from './plugins/types';
+import { createPluginCommands } from './commands/plugin';
+import { supabasePlugin } from './plugins/supabase-plugin';
+import { ChannelGateway } from './channels/gateway';
+import { FeishuChannel } from './channels/feishu';
+import { createChannelCommands } from './commands/channel';
 
 const deepSeek = createOpenAI({
     baseURL: process.env.LLM_API_BASE,
@@ -50,46 +68,106 @@ const memoryStore = new MemoryStore('.');
 memoryStore.init();
 registry.register(createMemoryTool(memoryStore));
 
+// ── RAG ────────────────────────────────
+const vectorStore = new VectorStore();
+const embedFn = process.env.DASHSCOPE_API_KEY
+    ? createDashScopeEmbedder(process.env.DASHSCOPE_API_KEY)
+    : createMockEmbedder();
+registry.register(...createRagTools(vectorStore, embedFn));
+
 async function connectMCP() {
     const mockClient = new MockMCPClient();
     const tools = await registry.registerMCPServer('github', mockClient);
     console.log(`  已注册 ${tools.length} 个 Mock MCP 工具`);
 }
 
+// ── Skills ────────────────────────────────
+const skillLoader = new SkillLoader('.');
+const loadedSkills = skillLoader.load();
+const activeSkills = new Set<string>();
+
+// ── Plugins ────────────────────────────────
+const pluginManager = new PluginManager(registry);
+const availablePlugins = new Map<string, PluginDefinition>([['supabase', supabasePlugin]]);
+
+// ── Prompt Builder ────────────────────────────────
+const builder = new PromptBuilder()
+    .pipe('coreRules', coreRules())
+    .pipe('toolGuide', toolGuide())
+    .pipe('deferredTools', deferredTools())
+    .pipe('memoryContext', memoryContext(memoryStore))
+    .pipe('ragContext', ragContext(vectorStore))
+    .pipe('skillContext', () => skillLoader.buildPromptSection(activeSkills))
+    .pipe('sessionContext', sessionContext());
+
+// ── Channel Gateway ────────────────────────────────
+const gateway = new ChannelGateway({
+    model,
+    registry,
+    buildSystem: () => builder.build(makePromptCtx()),
+});
+
+const FEISHU_PORT = Number(process.env.FEISHU_PORT || '3000');
+const feishuChannel = new FeishuChannel({
+    appId: process.env.FEISHU_APP_ID || '',
+    appSecret: process.env.FEISHU_APP_SECRET || '',
+    port: FEISHU_PORT,
+});
+gateway.register(feishuChannel);
+
 // ── Commands ────────────────────────────────
-const dispatch = createDispatcher([...debugCommands, ...contextCommands, ...memoryCommands]);
+const dispatch = createDispatcher([
+    ...debugCommands,
+    ...contextCommands,
+    ...memoryCommands,
+    ...ragCommands,
+    ...dreamCommands,
+    ...createSkillCommands(skillLoader, activeSkills),
+    ...createPluginCommands(pluginManager, availablePlugins),
+    ...createChannelCommands(gateway),
+]);
+
+function makePromptCtx(): PromptContext {
+    return {
+        toolCount: registry.getActiveTools().length,
+        deferredToolSummary: registry.getDeferredToolSummary(),
+        sessionMessageCount: 0,
+        sessionId: 'default',
+    };
+}
 
 async function main() {
     await connectMCP();
+
+    // 加载插件
+    console.log('  加载插件...');
+    for (const [name, def] of availablePlugins) {
+        try {
+            const tools = await pluginManager.load(def);
+            console.log(`  ✓ ${name} — ${tools.length} 个工具`);
+        } catch {
+            console.log(`  ✗ ${name} — 加载失败`);
+        }
+    }
+
+    // 启动 Channel
+    console.log('  启动 Channel...');
+    await gateway.startAll();
 
     const store = new SessionStore('default');
     let messages: ModelMessage[] = [];
     const timestamps = new Map<number, number>();
     const tracker = new UsageTracker('.usage/today.jsonl');
 
-    const builder = new PromptBuilder()
-        .pipe('coreRules', coreRules())
-        .pipe('toolGuide', toolGuide())
-        .pipe('deferredTools', deferredTools())
-        .pipe('memoryContext', () => memoryStore.buildPromptSection())
-        .pipe('sessionContext', sessionContext());
-
     const rl = createInterface({ input: process.stdin, output: process.stdout });
-
-    function makePromptCtx(): PromptContext {
-        return {
-            toolCount: registry.getActiveTools().length,
-            deferredToolSummary: registry.getDeferredToolSummary(),
-            sessionMessageCount: messages.length,
-            sessionId: 'default',
-        };
-    }
 
     function ask() {
         rl.question('\nYou: ', async (input) => {
             const trimmed = input.trim();
             if (!trimmed || trimmed === 'exit') {
                 console.log('Bye!');
+                await gateway.stopAll();
+                await pluginManager.unloadAll();
                 rl.close();
                 return;
             }
@@ -105,6 +183,7 @@ async function main() {
                 makePromptCtx,
                 ask,
                 memoryStore,
+                vectorStore,
             };
             const handled = dispatch(trimmed, ctx);
             if (handled === 'async') return;
@@ -132,16 +211,41 @@ async function main() {
         });
     }
 
-    console.log('Super Agent v0.11 — Memory System (type "exit" to quit)');
+    console.log('Super Agent v0.16 — Channel (type "exit" to quit)');
     console.log('快捷命令：');
-    console.log('  /memory         — 查看所有记忆');
-    console.log('  /memory search  — 搜索记忆');
-    console.log('  /context        — 终端里看 context 占用矩阵');
-    console.log('  /usage          — 累计 token 用量和成本');
-    console.log('  status          — 当前消息数、token 和记忆数');
+    console.log('  /channel         — 查看通道状态');
+    console.log('  /plugin          — 查看插件');
+    console.log('  /skill           — 查看 skills');
+    console.log('  /memory          — 查看记忆');
+    console.log('  /context         — context 占用矩阵');
     console.log('');
-    console.log(`  已加载 ${memoryStore.list().length} 条历史记忆`);
+    console.log(`  Dashboard: http://localhost:${FEISHU_PORT}`);
+    console.log('  打开浏览器发送测试消息，或在终端直接对话');
     console.log('');
+
+    if (loadedSkills.length > 0) {
+        console.log(`  发现 ${loadedSkills.length} 个 skill`);
+    }
+
+    if (fs.existsSync('docs')) {
+        const files = fs.readdirSync('docs').filter((f) => f.endsWith('.md'));
+        if (files.length > 0) {
+            console.log(`  发现 ${files.length} 个文档，自动导入知识库...`);
+            for (const f of files) {
+                const path = `docs/${f}`;
+                const text = fs.readFileSync(path, 'utf-8');
+                const chunks = chunkDocument(path, text);
+                const embeddings = await embed(
+                    embedFn,
+                    chunks.map((c) => c.text),
+                );
+                vectorStore.addBatch(
+                    chunks.map((c, i) => ({ chunk: c, embedding: embeddings[i] })),
+                );
+            }
+            console.log(`  知识库就绪，共 ${vectorStore.size()} 个片段\n`);
+        }
+    }
 
     ask();
 }
