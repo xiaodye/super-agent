@@ -33,6 +33,12 @@ export class ToolRegistry {
         }
     }
 
+    // 在 register 方法后面加上：
+    unregister(name: string): boolean {
+        this.discoveredTools.delete(name);
+        return this.tools.delete(name);
+    }
+
     async registerMCPServer(
         serverName: string,
         client: MCPClient | MockMCPClient,

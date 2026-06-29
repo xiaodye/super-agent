@@ -40,6 +40,10 @@ import { ragCommands } from './commands/rag';
 import { dreamCommands } from './commands/dream';
 import { SkillLoader } from './skills/loader';
 import { createSkillCommands } from './commands/skill';
+import { PluginManager } from './plugins/manager';
+import { PluginDefinition } from './plugins/types';
+import { createPluginCommands } from './commands/plugin';
+import { supabasePlugin } from './plugins/supabase-plugin';
 
 const deepSeek = createOpenAI({
     baseURL: process.env.LLM_API_BASE,
@@ -79,6 +83,10 @@ const skillLoader = new SkillLoader('.');
 const loadedSkills = skillLoader.load();
 const activeSkills = new Set<string>();
 
+// ── Plugins ────────────────────────────────
+const pluginManager = new PluginManager(registry);
+const availablePlugins = new Map<string, PluginDefinition>([['supabase', supabasePlugin]]);
+
 // ── Commands ────────────────────────────────
 const dispatch = createDispatcher([
     ...debugCommands,
@@ -87,10 +95,22 @@ const dispatch = createDispatcher([
     ...ragCommands,
     ...dreamCommands,
     ...createSkillCommands(skillLoader, activeSkills),
+    ...createPluginCommands(pluginManager, availablePlugins),
 ]);
 
 async function main() {
     await connectMCP();
+
+    // 启动时自动加载插件
+    console.log('  加载插件...');
+    for (const [name, def] of availablePlugins) {
+        try {
+            const tools = await pluginManager.load(def);
+            console.log(`  ✓ ${name} — ${tools.length} 个工具`);
+        } catch {
+            console.log(`  ✗ ${name} — 加载失败`);
+        }
+    }
 
     const store = new SessionStore('default');
     let messages: ModelMessage[] = [];
@@ -122,6 +142,7 @@ async function main() {
             const trimmed = input.trim();
             if (!trimmed || trimmed === 'exit') {
                 console.log('Bye!');
+                await pluginManager.unloadAll();
                 rl.close();
                 return;
             }
@@ -165,17 +186,25 @@ async function main() {
         });
     }
 
-    console.log('Super Agent v0.14 — Skills (type "exit" to quit)');
+    console.log('Super Agent v0.15 — Plugins (type "exit" to quit)');
     console.log('快捷命令：');
-    console.log('  /skill          — 查看可用的 skills');
-    console.log('  /skill load X   — 激活一个 skill');
-    console.log('  /code-review    — 直接激活并执行 code-review skill');
-    console.log('  /memory         — 查看记忆');
-    console.log('  /lint           — 扫描记忆库');
-    console.log('  /dream          — 记忆整理');
-    console.log('  /context        — context 占用矩阵');
-    console.log('  status          — 当前状态');
+    console.log('  /plugin          — 查看插件状态');
+    console.log('  /plugin load X   — 加载插件');
+    console.log('  /plugin unload X — 卸载插件');
+    console.log('  /skill           — 查看 skills');
+    console.log('  /memory          — 查看记忆');
+    console.log('  /context         — context 占用矩阵');
+    console.log('  status           — 当前状态');
     console.log('');
+
+    const pluginList = pluginManager.list();
+    if (pluginList.length > 0) {
+        console.log(`  已加载 ${pluginList.length} 个插件：`);
+        for (const p of pluginList) {
+            console.log(`    ${p.name} — ${p.tools.join(', ')}`);
+        }
+        console.log('');
+    }
 
     if (loadedSkills.length > 0) {
         console.log(`  发现 ${loadedSkills.length} 个 skill：`);
