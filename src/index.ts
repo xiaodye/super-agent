@@ -5,7 +5,7 @@ import fs from 'node:fs';
 
 import { createInterface } from 'node:readline';
 import { allTools } from './tools';
-import { agentLoop } from './agent/agent-loop';
+import { agentLoop } from './agent/loop';
 import { ToolDefinition, ToolRegistry } from './tools/registry';
 import { createMockModel, setCacheEnabled } from './mock-model';
 import { MCPClient, MockMCPClient } from './tools/mcp-client';
@@ -37,6 +37,7 @@ import { VectorStore } from './rag/store';
 import { SqliteVectorStore } from './rag/sqlite-store';
 import { createRagTools } from './tools/rag-tools';
 import { ragCommands } from './commands/rag';
+import { dreamCommands } from './commands/dream';
 
 const deepSeek = createOpenAI({
     baseURL: process.env.LLM_API_BASE,
@@ -53,12 +54,12 @@ const registry = new ToolRegistry();
 registry.register(...allTools);
 registry.register(createToolSearchTool(registry));
 
-// ── Memory ──────────��─────────────────────
+// ── Memory ────────────────────────────────
 const memoryStore = new MemoryStore('.');
 memoryStore.init();
 registry.register(createMemoryTool(memoryStore));
 
-// ── RAG ──��─────────────────────────────
+// ── RAG ────────────────────────────────
 const vectorStore = new VectorStore();
 const embedFn = process.env.DASHSCOPE_API_KEY
     ? createDashScopeEmbedder(process.env.DASHSCOPE_API_KEY)
@@ -71,12 +72,13 @@ async function connectMCP() {
     console.log(`  已注册 ${tools.length} 个 Mock MCP 工具`);
 }
 
-// ── Commands ���───────────────────────────────
+// ── Commands ────────────────────────────────
 const dispatch = createDispatcher([
     ...debugCommands,
     ...contextCommands,
     ...memoryCommands,
     ...ragCommands,
+    ...dreamCommands,
 ]);
 
 async function main() {
@@ -154,11 +156,13 @@ async function main() {
         });
     }
 
-    console.log('Super Agent v0.12 — RAG (type "exit" to quit)');
+    console.log('Super Agent v0.13 — Memory Maintenance (type "exit" to quit)');
     console.log('快捷命令：');
-    console.log('  ingest <path>   — 导入文档到知识��');
+    console.log('  ingest <path>   — 导入文档到知识库');
     console.log('  /rag            — 查看知识库状态');
-    console.log('  /memory         — 查看记忆');
+    console.log('  /memory         — 查看记忆（带 ⚠️ 标记）');
+    console.log('  /lint           — 扫描记忆库');
+    console.log('  /dream          — 记忆整理（lint → 清理 → 合并 → 报告）');
     console.log('  /context        — context 占用矩阵');
     console.log('  status          — 当前状态');
     console.log('');

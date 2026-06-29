@@ -1,5 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { bm25Search, type SearchHit } from './search';
+import { lintAll, type ValidationReport } from './validator';
 
 export interface MemoryEntry {
     name: string;
@@ -7,12 +9,15 @@ export interface MemoryEntry {
     type: 'user' | 'feedback' | 'project' | 'reference';
     content: string;
     filePath: string;
+    lastWriteAt?: number;
+    lastReadAt?: number;
 }
 
 const MEMORY_DIR = '.memory';
 const INDEX_FILE = 'MEMORY.md';
 const MAX_INDEX_LINES = 200;
 const MAX_FILE_CHARS = 4000;
+const STALE_DAYS = 30;
 
 export class MemoryStore {
     private readonly baseDir: string;
@@ -38,7 +43,7 @@ export class MemoryStore {
         }
     }
 
-    save(entry: Omit<MemoryEntry, 'filePath'>): string {
+    save(entry: Omit<MemoryEntry, 'filePath' | 'lastWriteAt' | 'lastReadAt'>): string {
         this.init();
         const slug = entry.name
             .toLowerCase()
@@ -46,12 +51,15 @@ export class MemoryStore {
             .replace(/^-|-$/g, '');
         const filename = `${entry.type}_${slug}.md`;
         const filePath = path.join(this.memoryDir, filename);
+        const now = Date.now();
 
         const fileContent = [
             '---',
             `name: ${entry.name}`,
             `description: ${entry.description}`,
             `type: ${entry.type}`,
+            `lastWriteAt: ${now}`,
+            `lastReadAt: ${now}`,
             '---',
             '',
             entry.content,
@@ -101,13 +109,8 @@ export class MemoryStore {
         return entries;
     }
 
-    search(query: string): MemoryEntry[] {
-        const all = this.list();
-        const keywords = query.toLowerCase().split(/\s+/);
-        return all.filter((entry) => {
-            const text = `${entry.name} ${entry.description} ${entry.content}`.toLowerCase();
-            return keywords.some((kw) => text.includes(kw));
-        });
+    search(query: string, topK = 5): SearchHit[] {
+        return bm25Search(this.list(), query, topK);
     }
 
     loadIndex(): string {
@@ -119,8 +122,22 @@ export class MemoryStore {
     loadFile(filename: string): string | null {
         const filePath = path.join(this.memoryDir, filename);
         if (!fs.existsSync(filePath)) return null;
+        this.touchReadAt(filename);
         const raw = fs.readFileSync(filePath, 'utf-8');
         return raw.length > MAX_FILE_CHARS ? raw.slice(0, MAX_FILE_CHARS) + '\n...(已截断)' : raw;
+    }
+
+    private touchReadAt(filename: string): void {
+        const filePath = path.join(this.memoryDir, filename);
+        const raw = fs.readFileSync(filePath, 'utf-8');
+        const now = Date.now();
+        let updated: string;
+        if (/^lastReadAt:.*$/m.test(raw)) {
+            updated = raw.replace(/^lastReadAt:.*$/m, `lastReadAt: ${now}`);
+        } else {
+            updated = raw.replace(/^---\n/, `---\nlastReadAt: ${now}\n`);
+        }
+        fs.writeFileSync(filePath, updated, 'utf-8');
     }
 
     delete(filename: string): boolean {
@@ -132,6 +149,10 @@ export class MemoryStore {
         const lines = indexContent.split('\n').filter((l) => !l.includes(`(${filename})`));
         fs.writeFileSync(this.indexPath, lines.join('\n'), 'utf-8');
         return true;
+    }
+
+    lint(): ValidationReport[] {
+        return lintAll(this.list(), this.baseDir);
     }
 
     buildPromptSection(): string {
@@ -149,8 +170,12 @@ export class MemoryStore {
             '记忆索引：',
             index,
             '',
-            '使用 memory 工具的 read 操作来读取具体记忆内容。',
-            '记忆是线索，不是事实——使用前先验证其准确性。',
+            '使用 memory 工具的 read 操作来读取具体记忆内容；用 search 做 BM25 搜索；用 lint 检查记忆库健康度。',
+            '',
+            '记忆使用原则：',
+            '- 记忆是线索，不是事实——使用前先用工具验证（read_file、grep 确认路径和内容是否还存在）',
+            '- 不存代码能推导的（技术栈、目录结构）、git 能查的（谁改了什么）、文档已经写了的',
+            '- 只存对话中出现的、其他地方推导不出来的信息（用户偏好、纠正反馈、项目决策、外部资源）',
         ];
         return lines.join('\n');
     }
@@ -175,6 +200,8 @@ export class MemoryStore {
             description: meta.description || '',
             type: meta.type as MemoryEntry['type'],
             content: match[2].trim(),
+            lastWriteAt: meta.lastWriteAt ? Number(meta.lastWriteAt) : undefined,
+            lastReadAt: meta.lastReadAt ? Number(meta.lastReadAt) : undefined,
         };
     }
 }
